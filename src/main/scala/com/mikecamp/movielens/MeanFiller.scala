@@ -24,11 +24,10 @@ class MeanFiller(override val uid: String)
     dataset.registerTempTable("temp")
     //a.userID, a.itemID, a.rating, a.occupation, a.gender , b.genre
     dataset.sqlContext.sql("""
-      WITH meanTable AS (SELECT a.itemID, a.ratingByItem,b.avgRating FROM 
-        (SELECT itemID, AVG(rating) as ratingByItem FROM temp
-        GROUP BY itemID) AS a LEFT JOIN 
-        (SELECT itemID,AVG(rating) as avgRating FROM temp) as b
-        ON a.itemID=b.itemID)
+      WITH meanTable AS (SELECT itemID, 
+          AVG(rating) OVER (PARTITION BY itemID) as ratingByItem,
+          AVG(rating) OVER () as avgRating FROM 
+        temp)
       SELECT a.userID, a.itemID, a.rating, a.occupation, 
         a.gender, a.genres, a.year, a.alsPreds,
       COALESCE(a.alsPreds,b.ratingByItem,b.avgRating) 
