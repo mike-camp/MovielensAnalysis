@@ -32,9 +32,12 @@ object Predictor {
     val dataWithReviews = sqlContext.sql("""
         WITH a AS (SELECT * FROM data as a LEFT JOIN users as b
           ON a.userID=b.id)
-          SELECT * FROM a LEFT JOIN movies as c ON a.itemID=c.id
+        SELECT a.userID, a.itemID, a.rating, a.occupation, 
+        a.gender , c.genres, c.year
+        FROM a LEFT JOIN movies as c ON a.itemID=c.id
       """
-        )
+      )
+        
     dataWithReviews.show()
 
     val pipeline = createPipeline()
@@ -66,6 +69,7 @@ object Predictor {
       .setRank(10)
       .setNonnegative(true)
       .setAlpha(.1)
+    val meanFiller = new MeanFiller()
     val occupationIndexer = new StringIndexer()
       .setInputCol("occupation")
       .setOutputCol("indexedOccupations")
@@ -79,7 +83,7 @@ object Predictor {
       .setInputCol("indexedOccupations")
       .setOutputCol("occupationVectors")
     val vecAssemble = new VectorAssembler()
-      .setInputCols(Array("occupationVectors","genres","alsPreds",
+      .setInputCols(Array("occupationVectors","genres","predictionsNaNRemoved",
           "oneHotGender","year"))
       .setOutputCol("finalVec")
     val linearRegression = new LinearRegression()
@@ -87,7 +91,8 @@ object Predictor {
       .setLabelCol("rating")
       .setPredictionCol("lrPreds")
     new Pipeline()
-      .setStages(Array(als,occupationIndexer,genderIndexer,genderEncoder,
+      .setStages(Array(als,meanFiller,
+          occupationIndexer,genderIndexer,genderEncoder,
           oneHotEncoder,vecAssemble, linearRegression))
     
   }
