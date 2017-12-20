@@ -23,15 +23,12 @@ class MeanFiller(override val uid: String)
   override def transform(dataset: Dataset[_]): DataFrame = {
     dataset.registerTempTable("temp")
     //a.userID, a.itemID, a.rating, a.occupation, a.gender , b.genre
+
     dataset.sqlContext.sql("""
-      WITH meanTable AS (SELECT itemID, 
-          AVG(rating) OVER (PARTITION BY itemID) as ratingByItem,
-          AVG(rating) OVER () as avgRating FROM 
-        temp)
-      SELECT a.userID, a.itemID, a.rating, a.occupation, 
-        a.gender, a.genres, a.year, a.alsPreds,
-      COALESCE(a.alsPreds,b.ratingByItem,b.avgRating) 
-        AS predictionsNaNRemoved FROM 
-      temp as a LEFT JOIN meanTable as b ON a.itemID=b.itemID""")
+      SELECT userID, itemID, rating, occupation, 
+        gender, genres, year, alsPreds,
+      COALESCE(alsPreds,AVG(rating) OVER (PARTITION BY itemID), 
+        AVG(rating) OVER ())  AS predictionsNaNRemoved FROM temp""" 
+      ).na.drop()
   }
 }

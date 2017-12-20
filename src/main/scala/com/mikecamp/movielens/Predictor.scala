@@ -9,6 +9,7 @@ import org.apache.spark.ml.evaluation.RegressionEvaluator
 import org.apache.spark.ml.tuning.CrossValidator
 import org.apache.spark.ml.tuning.ParamGridBuilder
 import org.apache.spark.sql.functions
+import org.apache.spark.ml.feature.Imputer;
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.regression.LinearRegression
 import org.apache.spark.ml.feature.{StringIndexer, OneHotEncoder, VectorAssembler}
@@ -38,7 +39,8 @@ object Predictor {
       """
       )
         
-    dataWithReviews.show()
+//    dataWithReviews.show()
+//    dataWithReviews.printSchema()
 
     val pipeline = createPipeline()
     val cv = new CrossValidator()
@@ -50,15 +52,68 @@ object Predictor {
             .setPredictionCol("lrPreds"))
       .setNumFolds(3)
       .setEstimatorParamMaps(new ParamGridBuilder().build())
-      
-    val cvModel = cv.fit(dataWithReviews)
-    for (i <-cvModel.avgMetrics) {
-      println(i)
-    }
+    val Array(df1,df2) = dataWithReviews.randomSplit(Array(.5,.5))
+    df2.show()
+    val debuggingPipeline = createDebuggingPipeline()
+    val fittedPipeline = debuggingPipeline.fit(df1)
+    val predictions = fittedPipeline.transform(df2)
+    predictions.show()
+
+    val evaluator = new RegressionEvaluator()
+            .setMetricName("rmse")
+            .setLabelCol("rating")
+            .setPredictionCol("lrPreds")
+    println(evaluator.evaluate(predictions))
+    
+//    val cvModel = cv.fit(dataWithReviews)
+//    for (i <-cvModel.avgMetrics) {
+//      println(i)
+//    }
     
   }
   
 
+  def createDebuggingPipeline() = {
+    val als = new ALS()
+      .setUserCol("userID")
+      .setItemCol("itemID")
+      .setRatingCol("rating")
+      .setPredictionCol("alsPreds")
+      .setRank(10)
+      .setNonnegative(true)
+      .setAlpha(.1)
+    val meanFiller = new MeanFiller()
+    //val exprs = numDf.columns.map(c => coalesce(col(c), col(s"avg($c)"), lit(0.0)).alias(c))
+    val occupationIndexer = new StringIndexer()
+      .setInputCol("occupation")
+      .setOutputCol("indexedOccupations")
+    val genderIndexer = new StringIndexer()
+      .setInputCol("gender")
+      .setOutputCol("indexedGender")
+
+    val genderEncoder = new OneHotEncoder()
+      .setInputCol("indexedGender")
+      .setOutputCol("oneHotGender")
+    val oneHotEncoder = new OneHotEncoder()
+      .setInputCol("indexedOccupations")
+      .setOutputCol("occupationVectors")
+    val cols = Array("occupationVectors","genres","predictionsNaNRemoved",
+          "oneHotGender","year")
+    val vecAssemble = new VectorAssembler()
+      .setInputCols(cols)
+      .setOutputCol("finalVec")
+      
+    val linearRegression = new LinearRegression()
+      .setFeaturesCol(vecAssemble.getOutputCol)
+      .setLabelCol("rating")
+      .setPredictionCol("lrPreds")
+      
+    new Pipeline()
+      .setStages(Array(als,meanFiller,
+          occupationIndexer,genderIndexer,genderEncoder,
+          oneHotEncoder, vecAssemble, linearRegression))
+    
+  }
   
   def createPipeline() = {
     val als = new ALS()
@@ -70,30 +125,35 @@ object Predictor {
       .setNonnegative(true)
       .setAlpha(.1)
     val meanFiller = new MeanFiller()
+    //val exprs = numDf.columns.map(c => coalesce(col(c), col(s"avg($c)"), lit(0.0)).alias(c))
     val occupationIndexer = new StringIndexer()
       .setInputCol("occupation")
       .setOutputCol("indexedOccupations")
     val genderIndexer = new StringIndexer()
       .setInputCol("gender")
       .setOutputCol("indexedGender")
+
     val genderEncoder = new OneHotEncoder()
       .setInputCol("indexedGender")
       .setOutputCol("oneHotGender")
     val oneHotEncoder = new OneHotEncoder()
       .setInputCol("indexedOccupations")
       .setOutputCol("occupationVectors")
+    val cols = Array("occupationVectors","genres","predictionsNaNRemoved",
+          "oneHotGender","year")
     val vecAssemble = new VectorAssembler()
-      .setInputCols(Array("occupationVectors","genres","predictionsNaNRemoved",
-          "oneHotGender","year"))
+      .setInputCols(cols)
       .setOutputCol("finalVec")
+      
     val linearRegression = new LinearRegression()
       .setFeaturesCol(vecAssemble.getOutputCol)
       .setLabelCol("rating")
       .setPredictionCol("lrPreds")
+      
     new Pipeline()
       .setStages(Array(als,meanFiller,
           occupationIndexer,genderIndexer,genderEncoder,
-          oneHotEncoder,vecAssemble, linearRegression))
+          oneHotEncoder, vecAssemble, linearRegression))
     
   }
   
